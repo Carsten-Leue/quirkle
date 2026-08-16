@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Qwirkle Scoreboard</title>
+<title>Qwirkle Punktetafel</title>
 <style>
   /* ---------------------------------------------------------
      Built for the Kindle Paperwhite's old WebKit browser:
@@ -230,23 +230,23 @@
 <body>
 
 <header class="clearfix">
-  <h1>Qwirkle<span class="sub">Scoreboard</span></h1>
+  <h1>Qwirkle<span class="sub">Punktetafel</span></h1>
   <div id="round"></div>
 </header>
 
 <div class="rules-note">
-  Tap <strong>+1 / -1</strong> per tile played this turn. Use <strong>Qwirkle +6</strong> when a
-  player completes a line of 6. Use <strong>Final +6</strong> once, for whoever empties their rack first.
+  Tippe <strong>+1 / -1</strong> für jeden in diesem Zug gelegten Stein. Nutze <strong>Qwirkle +6</strong>,
+  wenn ein Spieler eine Reihe von 6 vervollständigt. Nutze <strong>Schluss +6</strong> einmal, für wer zuerst alle Steine loswird.
 </div>
 
 <div id="players" class="clearfix"></div>
 
 <div class="actions clearfix">
-  <button id="addPlayerBtn" class="">+ Add Player</button>
-  <button id="newGameBtn" class="last">New Game</button>
+  <button id="addPlayerBtn" class="">+ Spieler hinzufügen</button>
+  <button id="newGameBtn" class="last">Neues Spiel</button>
 </div>
 
-<footer>Scores save automatically on this device.</footer>
+<footer>Punktestände werden automatisch auf diesem Gerät gespeichert.</footer>
 
 <script>
 (function () {
@@ -267,8 +267,8 @@
   function defaultState() {
     return {
       players: [
-        { name: "Player 1", score: 0 },
-        { name: "Player 2", score: 0 }
+        { name: "Spieler 1", score: 0 },
+        { name: "Spieler 2", score: 0 }
       ]
     };
   }
@@ -308,7 +308,7 @@
   }
 
   function render() {
-    roundEl.textContent = state.players.length + " Player" + (state.players.length > 1 ? "s" : "");
+    roundEl.textContent = state.players.length + " Spieler";
 
     playersEl.innerHTML = "";
     wrapEls = [];
@@ -327,9 +327,9 @@
       var nameInput = document.createElement("input");
       nameInput.className = "player-name";
       nameInput.value = p.name;
-      nameInput.setAttribute("aria-label", "Player name");
+      nameInput.setAttribute("aria-label", "Spielername");
       nameInput.addEventListener("change", function () {
-        state.players[idx].name = nameInput.value || ("Player " + (idx + 1));
+        state.players[idx].name = nameInput.value || ("Spieler " + (idx + 1));
         save();
       });
 
@@ -338,9 +338,9 @@
       if (state.players.length > 1) {
         var rm = document.createElement("button");
         rm.className = "remove-player";
-        rm.textContent = "Remove";
+        rm.textContent = "Entfernen";
         rm.addEventListener("click", function () {
-          if (confirm("Remove " + (state.players[idx].name || "this player") + "?")) {
+          if (confirm((state.players[idx].name || "Diesen Spieler") + " entfernen?")) {
             state.players.splice(idx, 1);
             save();
             render();
@@ -407,7 +407,7 @@
 
       var plusFinal = document.createElement("button");
       plusFinal.className = "last";
-      plusFinal.textContent = "Final +6";
+      plusFinal.textContent = "Schluss +6";
       plusFinal.addEventListener("click", function () {
         state.players[idx].score += 6;
         save();
@@ -477,16 +477,16 @@
 
   document.getElementById("addPlayerBtn").addEventListener("click", function () {
     if (state.players.length >= MAX_PLAYERS) {
-      alert("Maximum " + MAX_PLAYERS + " players.");
+      alert("Maximal " + MAX_PLAYERS + " Spieler.");
       return;
     }
-    state.players.push({ name: "Player " + (state.players.length + 1), score: 0 });
+    state.players.push({ name: "Spieler " + (state.players.length + 1), score: 0 });
     save();
     render();
   });
 
   document.getElementById("newGameBtn").addEventListener("click", function () {
-    if (confirm("Start a new game? This resets all scores.")) {
+    if (confirm("Neues Spiel starten? Alle Punktestände werden zurückgesetzt.")) {
       var names = state.players.map(function (p) { return p.name; });
       state = defaultState();
       state.players = names.map(function (n) { return { name: n, score: 0 }; });
