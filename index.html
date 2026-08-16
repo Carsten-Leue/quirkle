@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Qwirkle Scoreboard</title>
+<style>
+  /* ---------------------------------------------------------
+     E-ink friendly: pure black/white, no gradients, no shadows,
+     no animation or transition (avoids ghosting), big tap targets.
+  --------------------------------------------------------- */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #000000;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  body {
+    padding: 14px 12px 40px;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 3px solid #000;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+  }
+
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin: 0;
+  }
+
+  h1 .sub {
+    font-family: Verdana, sans-serif;
+    font-size: 12px;
+    font-weight: normal;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    display: block;
+    margin-top: 2px;
+  }
+
+  #round {
+    font-family: Verdana, sans-serif;
+    font-size: 13px;
+    text-align: right;
+  }
+
+  /* --- Tile-rack divider: the six Qwirkle shapes, used between
+     player rows instead of a plain rule. Functions as the page's
+     signature element and reinforces what game this is for. --- */
+  .tilebar {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 6px 0;
+  }
+  .tilebar svg { width: 16px; height: 16px; }
+
+  .player {
+    border: 3px solid #000;
+    margin-bottom: 0;
+    padding: 10px 12px 12px;
+  }
+
+  .player-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .player-name {
+    font-size: 20px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+    font-family: Georgia, serif;
+    width: 62%;
+    padding: 2px 0;
+    border-bottom: 2px solid transparent;
+  }
+  .player-name:focus { outline: none; border-bottom: 2px solid #000; }
+
+  .remove-player {
+    font-family: Verdana, sans-serif;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    background: #fff;
+    border: 2px solid #000;
+    padding: 6px 8px;
+  }
+
+  .score-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .score-display {
+    flex: 1;
+    border: 3px solid #000;
+    font-size: 46px;
+    font-weight: 700;
+    text-align: center;
+    padding: 4px 0;
+    font-family: Verdana, Geneva, sans-serif;
+    line-height: 1;
+  }
+
+  .btn-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  button {
+    font-family: Verdana, sans-serif;
+    font-weight: bold;
+    background: #fff;
+    color: #000;
+    border: 3px solid #000;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0;
+  }
+
+  button:active {
+    background: #000;
+    color: #fff;
+  }
+
+  .stepper {
+    width: 64px;
+    height: 40px;
+    font-size: 22px;
+  }
+
+  .quick-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .quick-row button {
+    flex: 1;
+    height: 40px;
+    font-size: 15px;
+  }
+
+  .quick-row .qwirkle-btn {
+    flex: 1.4;
+  }
+
+  #players {
+    border-top: 3px solid #000;
+  }
+
+  #players .player { border-top: none; }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .actions button {
+    flex: 1;
+    height: 46px;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  #newGameBtn { border-width: 4px; }
+
+  footer {
+    margin-top: 22px;
+    font-family: Verdana, sans-serif;
+    font-size: 10px;
+    text-align: center;
+    color: #000;
+    border-top: 1px solid #000;
+    padding-top: 8px;
+  }
+
+  .rules-note {
+    font-family: Verdana, sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    border: 2px dashed #000;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Qwirkle<span class="sub">Scoreboard</span></h1>
+  <div id="round"></div>
+</header>
+
+<div class="rules-note">
+  Tap <strong>+1 / -1</strong> per tile played this turn. Use <strong>Qwirkle +6</strong> when a
+  player completes a line of 6. Use <strong>Final +6</strong> once, for whoever empties their rack first.
+</div>
+
+<div id="players"></div>
+
+<div class="actions">
+  <button id="addPlayerBtn">+ Add Player</button>
+  <button id="newGameBtn">New Game</button>
+</div>
+
+<footer>Scores save automatically on this device.</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "qwirkle-scoreboard-v1";
+  var MAX_PLAYERS = 6;
+
+  // ---- Qwirkle tile shapes as tiny inline SVGs (grayscale, e-ink safe) ----
+  var SHAPES = [
+    '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#000" stroke-width="2.5"/></svg>',
+    '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" fill="none" stroke="#000" stroke-width="2.5"/></svg>',
+    '<svg viewBox="0 0 24 24"><path d="M12 2 L22 12 L12 22 L2 12 Z" fill="none" stroke="#000" stroke-width="2.5"/></svg>',
+    '<svg viewBox="0 0 24 24"><path d="M12 1 L15 9 L23 12 L15 15 L12 23 L9 15 L1 12 L9 9 Z" fill="none" stroke="#000" stroke-width="2"/></svg>',
+    '<svg viewBox="0 0 24 24"><path d="M9 2h6v6h6v6h-6v6H9v-6H3V8h6z" fill="none" stroke="#000" stroke-width="2"/></svg>',
+    '<svg viewBox="0 0 24 24"><path d="M12 2 A5 5 0 1 1 11.9 2 M12 12 A5 5 0 1 1 3 12 M12 12 A5 5 0 1 1 21 12" fill="none" stroke="#000" stroke-width="2"/></svg>'
+  ];
+
+  function tileBarHTML() {
+    var out = '<div class="tilebar">';
+    for (var i = 0; i < SHAPES.length; i++) out += SHAPES[i];
+    out += '</div>';
+    return out;
+  }
+
+  function defaultState() {
+    return {
+      round: 1,
+      players: [
+        { name: "Player 1", score: 0 },
+        { name: "Player 2", score: 0 }
+      ]
+    };
+  }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return defaultState();
+      var parsed = JSON.parse(raw);
+      if (!parsed.players || !parsed.players.length) return defaultState();
+      return parsed;
+    } catch (e) {
+      return defaultState();
+    }
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) { /* storage unavailable, continue in-memory */ }
+  }
+
+  var state = load();
+
+  var playersEl = document.getElementById("players");
+  var roundEl = document.getElementById("round");
+
+  function render() {
+    roundEl.textContent = state.players.length + " Player" + (state.players.length > 1 ? "s" : "");
+
+    playersEl.innerHTML = "";
+    state.players.forEach(function (p, idx) {
+      var wrap = document.createElement("div");
+
+      var card = document.createElement("div");
+      card.className = "player";
+
+      var head = document.createElement("div");
+      head.className = "player-head";
+
+      var nameInput = document.createElement("input");
+      nameInput.className = "player-name";
+      nameInput.value = p.name;
+      nameInput.setAttribute("aria-label", "Player name");
+      nameInput.addEventListener("change", function () {
+        state.players[idx].name = nameInput.value || ("Player " + (idx + 1));
+        save();
+      });
+
+      head.appendChild(nameInput);
+
+      if (state.players.length > 1) {
+        var rm = document.createElement("button");
+        rm.className = "remove-player";
+        rm.textContent = "Remove";
+        rm.addEventListener("click", function () {
+          if (confirm("Remove " + (state.players[idx].name || "this player") + "?")) {
+            state.players.splice(idx, 1);
+            save();
+            render();
+          }
+        });
+        head.appendChild(rm);
+      }
+
+      card.appendChild(head);
+
+      var scoreRow = document.createElement("div");
+      scoreRow.className = "score-row";
+
+      var display = document.createElement("div");
+      display.className = "score-display";
+      display.textContent = p.score;
+
+      var btnCol = document.createElement("div");
+      btnCol.className = "btn-col";
+
+      var plus = document.createElement("button");
+      plus.className = "stepper";
+      plus.textContent = "+1";
+      plus.addEventListener("click", function () {
+        state.players[idx].score += 1;
+        save();
+        display.textContent = state.players[idx].score;
+      });
+
+      var minus = document.createElement("button");
+      minus.className = "stepper";
+      minus.textContent = "-1";
+      minus.addEventListener("click", function () {
+        state.players[idx].score = Math.max(0, state.players[idx].score - 1);
+        save();
+        display.textContent = state.players[idx].score;
+      });
+
+      btnCol.appendChild(plus);
+      btnCol.appendChild(minus);
+
+      scoreRow.appendChild(display);
+      scoreRow.appendChild(btnCol);
+      card.appendChild(scoreRow);
+
+      var quickRow = document.createElement("div");
+      quickRow.className = "quick-row";
+
+      var plus3 = document.createElement("button");
+      plus3.textContent = "+3";
+      plus3.addEventListener("click", function () {
+        state.players[idx].score += 3;
+        save();
+        display.textContent = state.players[idx].score;
+      });
+
+      var plusQwirkle = document.createElement("button");
+      plusQwirkle.className = "qwirkle-btn";
+      plusQwirkle.textContent = "Qwirkle +6";
+      plusQwirkle.addEventListener("click", function () {
+        state.players[idx].score += 6;
+        save();
+        display.textContent = state.players[idx].score;
+      });
+
+      var plusFinal = document.createElement("button");
+      plusFinal.textContent = "Final +6";
+      plusFinal.addEventListener("click", function () {
+        state.players[idx].score += 6;
+        save();
+        display.textContent = state.players[idx].score;
+      });
+
+      quickRow.appendChild(plus3);
+      quickRow.appendChild(plusQwirkle);
+      quickRow.appendChild(plusFinal);
+      card.appendChild(quickRow);
+
+      wrap.appendChild(card);
+      wrap.innerHTML += tileBarHTML();
+      playersEl.appendChild(wrap);
+    });
+  }
+
+  document.getElementById("addPlayerBtn").addEventListener("click", function () {
+    if (state.players.length >= MAX_PLAYERS) {
+      alert("Maximum " + MAX_PLAYERS + " players.");
+      return;
+    }
+    state.players.push({ name: "Player " + (state.players.length + 1), score: 0 });
+    save();
+    render();
+  });
+
+  document.getElementById("newGameBtn").addEventListener("click", function () {
+    if (confirm("Start a new game? This resets all scores.")) {
+      var names = state.players.map(function (p) { return p.name; });
+      state = defaultState();
+      state.players = names.map(function (n) { return { name: n, score: 0 }; });
+      save();
+      render();
+    }
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>
