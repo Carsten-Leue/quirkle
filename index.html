@@ -391,8 +391,12 @@
       quickRow.appendChild(plusFinal);
       card.appendChild(quickRow);
 
+      var tileDiv = document.createElement("div");
+      tileDiv.className = "tilebar";
+      tileDiv.innerHTML = SHAPES.join("");
+
       wrap.appendChild(card);
-      wrap.innerHTML += tileBarHTML();
+      wrap.appendChild(tileDiv);
       playersEl.appendChild(wrap);
     });
   }
