@@ -481,6 +481,20 @@
     color: #fff;
   }
 
+  .wiz-tricks-sum {
+    clear: both;
+    font-family: Verdana, sans-serif;
+    font-size: 14px;
+    text-align: center;
+    border-top: 2px solid #000;
+    margin-top: 4px;
+    padding-top: 10px;
+  }
+
+  .wiz-tricks-sum.warn {
+    font-weight: 700;
+  }
+
   .wiz-gameover {
     clear: both;
     font-family: Verdana, sans-serif;
@@ -1170,33 +1184,16 @@
 
     // Tricks phase: unlike bidding, tricks aren't turn-based (they're
     // counted after the hand is played), so every player's grid stays
-    // visible at once, same as before.
+    // visible at once, and every player - including the last one -
+    // picks their own value. What the app adds is a running total plus
+    // a check that it lands on exactly tricksN before letting the
+    // round continue.
     function renderTricks() {
       var tricksN = state.round;
 
-      // All tricks dealt this round must add up to tricksN, so once
-      // every player but one has a count, the last one isn't really a
-      // choice - fill it in for them. Their grid stays interactive, so
-      // if an earlier entry gets corrected afterwards, they can still
-      // tap a different value themselves.
-      var unsetPlayers = [];
-      var sumSet = 0;
-      state.players.forEach(function (p) {
-        if (p.tricks === null) unsetPlayers.push(p);
-        else sumSet += p.tricks;
-      });
-      var autoFilledPlayer = null;
-      if (unsetPlayers.length === 1) {
-        var forced = tricksN - sumSet;
-        if (forced >= 0 && forced <= tricksN) {
-          unsetPlayers[0].tricks = forced;
-          autoFilledPlayer = unsetPlayers[0];
-          save();
-        }
-      }
-
       roundEl.textContent = "Runde " + state.round + " von " + maxRounds() + " · Stiche eintragen";
-      rulesEl.innerHTML = "Trage für jeden Spieler die tatsächlich gewonnenen <strong>Stiche</strong> (0–" + tricksN + ") ein.";
+      rulesEl.innerHTML = "Trage für jeden Spieler die tatsächlich gewonnenen <strong>Stiche</strong> (0–" + tricksN +
+        ") ein. Die Summe aller Stiche muss genau " + tricksN + " ergeben.";
 
       actionsEl.style.display = "none";
 
@@ -1219,7 +1216,7 @@
 
         var label = document.createElement("div");
         label.className = "wiz-picker-label";
-        label.textContent = p === autoFilledPlayer ? "Stiche (automatisch ergänzt)" : "Stiche";
+        label.textContent = "Stiche";
         card.appendChild(label);
 
         card.appendChild(buildPicker(idx, "tricks", tricksN, null));
@@ -1230,8 +1227,25 @@
       });
 
       var allSet = state.players.every(function (p) { return p.tricks !== null; });
+      var sum = 0;
+      state.players.forEach(function (p) {
+        if (p.tricks !== null) sum += p.tricks;
+      });
+      var sumOk = sum === tricksN;
+
+      var sumEl = document.createElement("div");
+      sumEl.className = "wiz-tricks-sum" + (allSet && !sumOk ? " warn" : "");
+      if (!allSet) {
+        sumEl.textContent = "Bisher eingetragen: " + sum + " von " + tricksN + " Stichen";
+      } else if (sumOk) {
+        sumEl.textContent = "Summe stimmt: " + sum + " von " + tricksN + " Stichen";
+      } else {
+        sumEl.textContent = "Summe stimmt nicht: " + sum + " von " + tricksN + " Stichen – bitte korrigieren.";
+      }
+      playersEl.appendChild(sumEl);
+
       primaryRowEl.style.display = "";
-      primaryBtn.disabled = !allSet;
+      primaryBtn.disabled = !(allSet && sumOk);
       primaryBtn.textContent = "Ergebnis berechnen →";
 
       layout();
