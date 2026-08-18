@@ -933,21 +933,37 @@
       });
     }
 
-    // Players bid in list order, one at a time. The first player
-    // with no bid yet is the one whose turn it is; -1 once everyone
-    // has bid.
+    // Who bids first rotates with the round, same as the deal does at
+    // the table: round 1 starts with player 0, round 2 with player 1,
+    // and so on, wrapping back to player 0. Everyone still bids in
+    // list order after that starting point.
+    function bidOrder() {
+      var n = state.players.length;
+      var start = (state.round - 1) % n;
+      var order = [];
+      for (var i = 0; i < n; i++) {
+        order.push((start + i) % n);
+      }
+      return order;
+    }
+
+    // The first player in this round's order with no bid yet is the
+    // one whose turn it is; -1 once everyone has bid.
     function currentBidIdx() {
-      for (var i = 0; i < state.players.length; i++) {
-        if (state.players[i].bid === null) return i;
+      var order = bidOrder();
+      for (var i = 0; i < order.length; i++) {
+        if (state.players[order[i]].bid === null) return order[i];
       }
       return -1;
     }
 
-    // The classic Wizard "hook" rule: the last player to bid may not
-    // name the number that would make every bid add up exactly to
+    // The classic Wizard "hook" rule: the last player to bid (the one
+    // right before this round's starting player, in bidding order) may
+    // not name the number that would make every bid add up exactly to
     // the tricks available this round.
     function computeLastBidderForbidden() {
-      var lastIdx = state.players.length - 1;
+      var order = bidOrder();
+      var lastIdx = order[order.length - 1];
       var tricksN = state.round;
       var sumOthers = 0;
       state.players.forEach(function (p, i) {
@@ -1151,7 +1167,8 @@
         label.textContent = isCorrection ? "Ansage korrigieren" : "ist an der Reihe – Ansage wählen";
         card.appendChild(label);
 
-        var forbiddenVal = activeIdx === state.players.length - 1 ? computeLastBidderForbidden() : null;
+        var order = bidOrder();
+        var forbiddenVal = activeIdx === order[order.length - 1] ? computeLastBidderForbidden() : null;
         card.appendChild(buildPicker(activeIdx, "bid", tricksN, forbiddenVal, function () {
           bidEditingIdx = null;
         }, true));
