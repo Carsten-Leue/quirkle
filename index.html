@@ -166,6 +166,30 @@
     padding: 7px 10px;
   }
 
+  /* Below this width, cards are narrow enough (e.g. 2-3 columns on a
+     phone-sized screen) that the 60%-wide name field starts clipping
+     player names. Stack name and remove-button full-width instead of
+     squeezing them onto one line. */
+  @media (max-width: 480px) {
+    .player-name-wrap {
+      float: none;
+      width: 100%;
+    }
+    .player-name {
+      font-size: 19px;
+    }
+    .remove-player {
+      float: none;
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      padding: 6px 4px;
+      text-align: center;
+    }
+  }
+
   /* display:table/table-cell instead of flexbox, for vertical centering */
   .score-row {
     display: table;
