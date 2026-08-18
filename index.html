@@ -1174,6 +1174,27 @@
     function renderTricks() {
       var tricksN = state.round;
 
+      // All tricks dealt this round must add up to tricksN, so once
+      // every player but one has a count, the last one isn't really a
+      // choice - fill it in for them. Their grid stays interactive, so
+      // if an earlier entry gets corrected afterwards, they can still
+      // tap a different value themselves.
+      var unsetPlayers = [];
+      var sumSet = 0;
+      state.players.forEach(function (p) {
+        if (p.tricks === null) unsetPlayers.push(p);
+        else sumSet += p.tricks;
+      });
+      var autoFilledPlayer = null;
+      if (unsetPlayers.length === 1) {
+        var forced = tricksN - sumSet;
+        if (forced >= 0 && forced <= tricksN) {
+          unsetPlayers[0].tricks = forced;
+          autoFilledPlayer = unsetPlayers[0];
+          save();
+        }
+      }
+
       roundEl.textContent = "Runde " + state.round + " von " + maxRounds() + " · Stiche eintragen";
       rulesEl.innerHTML = "Trage für jeden Spieler die tatsächlich gewonnenen <strong>Stiche</strong> (0–" + tricksN + ") ein.";
 
@@ -1198,7 +1219,7 @@
 
         var label = document.createElement("div");
         label.className = "wiz-picker-label";
-        label.textContent = "Stiche";
+        label.textContent = p === autoFilledPlayer ? "Stiche (automatisch ergänzt)" : "Stiche";
         card.appendChild(label);
 
         card.appendChild(buildPicker(idx, "tricks", tricksN, null));
