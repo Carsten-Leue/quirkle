@@ -308,6 +308,90 @@
     margin-bottom: 6px;
   }
 
+  .wiz-turn-name {
+    display: block;
+    width: 100%;
+    text-align: center;
+    font-size: 32px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+    font-family: Georgia, serif;
+    padding: 4px 0 8px;
+    border-bottom: 2px solid transparent;
+  }
+  .wiz-turn-name:focus { outline: none; border-bottom: 2px solid #000; }
+
+  .wiz-turn-label {
+    font-family: Verdana, sans-serif;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+
+  .wiz-turn-overview {
+    clear: both;
+    margin-top: 18px;
+    border-top: 2px solid #000;
+    padding-top: 8px;
+  }
+
+  .wiz-turn-overview-title {
+    font-family: Verdana, sans-serif;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .wiz-turn-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    border-bottom: 1px solid #ccc;
+    background: none;
+    font-family: Verdana, sans-serif;
+    font-weight: normal;
+    font-size: 14px;
+    padding: 8px 2px;
+    cursor: default;
+  }
+  button.wiz-turn-row {
+    cursor: pointer;
+  }
+  button.wiz-turn-row:active {
+    background: #eee;
+    color: #000;
+  }
+  .wiz-turn-row:after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+  .wiz-turn-row .wt-name {
+    float: left;
+  }
+  .wiz-turn-row .wt-val {
+    float: right;
+    font-weight: 700;
+  }
+  .wiz-turn-row.current {
+    border-bottom: 1px solid #000;
+  }
+  .wiz-turn-row.current .wt-name {
+    font-weight: 700;
+  }
+  .wiz-turn-row.pending .wt-name,
+  .wiz-turn-row.pending .wt-val {
+    color: #999;
+  }
+  button.wiz-turn-row .wt-val {
+    text-decoration: underline;
+  }
+
   .wiz-recap {
     font-family: Verdana, sans-serif;
     font-size: 13px;
@@ -694,6 +778,9 @@
 
     var wrapEls = [];
     var totalDisplayEls = [];
+    // Transient (not persisted): set while correcting an earlier
+    // player's bid, so the turn view can jump back to them.
+    var bidEditingIdx = null;
 
     function defaultState() {
       return {
@@ -756,34 +843,35 @@
       });
     }
 
-    // The classic Wizard "hook" rule: whoever bids last may not name
-    // the number that would make every bid add up exactly to the
-    // tricks available this round. We don't track table turn order,
-    // so this applies dynamically to whichever player happens to be
-    // the sole remaining bidder once everyone else has bid.
-    function computeBidForbidden() {
-      var tricksN = state.round;
-      var unsetIdx = -1;
-      var unsetCount = 0;
-      var sumSet = 0;
-      state.players.forEach(function (p, i) {
-        if (p.bid === null) {
-          unsetCount++;
-          unsetIdx = i;
-        } else {
-          sumSet += p.bid;
-        }
-      });
-      var forbidden = {};
-      if (unsetCount === 1) {
-        var val = tricksN - sumSet;
-        if (val >= 0 && val <= tricksN) forbidden[unsetIdx] = val;
+    // Players bid in list order, one at a time. The first player
+    // with no bid yet is the one whose turn it is; -1 once everyone
+    // has bid.
+    function currentBidIdx() {
+      for (var i = 0; i < state.players.length; i++) {
+        if (state.players[i].bid === null) return i;
       }
-      return forbidden;
+      return -1;
+    }
+
+    // The classic Wizard "hook" rule: the last player to bid may not
+    // name the number that would make every bid add up exactly to
+    // the tricks available this round.
+    function computeLastBidderForbidden() {
+      var lastIdx = state.players.length - 1;
+      var tricksN = state.round;
+      var sumOthers = 0;
+      state.players.forEach(function (p, i) {
+        if (i !== lastIdx && p.bid !== null) sumOthers += p.bid;
+      });
+      var val = tricksN - sumOthers;
+      if (val >= 0 && val <= tricksN) return val;
+      return null;
     }
 
     // Grid of number buttons 0..maxVal, exactly one selectable/selected.
-    function buildPicker(idx, field, maxVal, forbiddenVal) {
+    // afterSelect (optional) runs right after the value is set, before
+    // save/render - used to clear turn-correction state.
+    function buildPicker(idx, field, maxVal, forbiddenVal, afterSelect) {
       var wrap = document.createElement("div");
       wrap.className = "wiz-picker clearfix";
 
@@ -807,6 +895,7 @@
           }
           btn.addEventListener("click", function () {
             state.players[idx][field] = v;
+            if (afterSelect) afterSelect();
             save();
             render();
           });
@@ -815,6 +904,66 @@
       }
 
       return wrap;
+    }
+
+    // Compact list of every player and their bid so far. Rows behave
+    // differently depending on where we are in the bid phase:
+    //  - removeMode (pre-game): every row removes that player
+    //  - otherwise: rows with an already-set bid can be tapped to
+    //    jump back and correct that player's bid
+    function buildBidOverview(activeIdx, removeMode) {
+      var box = document.createElement("div");
+      box.className = "wiz-turn-overview";
+
+      var title = document.createElement("div");
+      title.className = "wiz-turn-overview-title";
+      title.textContent = removeMode ? "Mitspieler" : "Ansagen bisher";
+      box.appendChild(title);
+
+      state.players.forEach(function (p, i) {
+        var isCurrent = i === activeIdx;
+        var isSet = p.bid !== null;
+        var canRemove = removeMode && state.players.length > MIN_PLAYERS;
+        var canEdit = !removeMode && isSet && !isCurrent;
+
+        var row;
+        if (canRemove) {
+          row = document.createElement("button");
+          row.type = "button";
+          row.addEventListener("click", function () {
+            if (confirm((p.name || "Diesen Spieler") + " entfernen?")) {
+              state.players.splice(i, 1);
+              bidEditingIdx = null;
+              save();
+              render();
+            }
+          });
+        } else if (canEdit) {
+          row = document.createElement("button");
+          row.type = "button";
+          row.addEventListener("click", function () {
+            bidEditingIdx = i;
+            render();
+          });
+        } else {
+          row = document.createElement("div");
+        }
+        row.className = "wiz-turn-row" + (isCurrent ? " current" : "") + (isSet ? "" : " pending");
+
+        var nameSpan = document.createElement("span");
+        nameSpan.className = "wt-name";
+        nameSpan.textContent = p.name;
+        row.appendChild(nameSpan);
+
+        var valSpan = document.createElement("span");
+        valSpan.className = "wt-val";
+        valSpan.textContent = canRemove ? "Entfernen" : (isSet ? String(p.bid) : "–");
+        row.appendChild(valSpan);
+
+        box.appendChild(row);
+      });
+
+      return box;
     }
 
     function buildNameHead(idx, p, showManage) {
@@ -848,23 +997,87 @@
       return head;
     }
 
-    // Phases "bid" and "tricks" share the same card shape: name,
-    // (a bid recap during "tricks") and a single number grid.
-    function renderInput() {
-      var field = state.phase;
+    // Bid phase: players bid one at a time, in list order. Only the
+    // player whose turn it is (or one being corrected) sees their
+    // name and a number grid; everyone else is just a small line in
+    // the overview below, so the screen stays focused on one choice
+    // at a time.
+    function renderBid() {
       var tricksN = state.round;
-      var showManage = isPreGame();
+      var natural = currentBidIdx();
+      var allSet = natural === -1;
+      var pregame = isPreGame();
+      var activeIdx = bidEditingIdx !== null ? bidEditingIdx : natural;
 
-      roundEl.textContent = "Runde " + state.round + " von " + maxRounds() + " · " +
-        (field === "bid" ? "Tipp abgeben" : "Stiche eintragen");
+      roundEl.textContent = "Runde " + state.round + " von " + maxRounds() + " · Tipp abgeben";
+      rulesEl.innerHTML = "Die Spieler geben nacheinander ihre <strong>Ansage</strong> ab (0–" + tricksN +
+        "). Der letzte Spieler darf die Ansagen nicht auf genau " + tricksN + " summieren lassen.";
 
-      rulesEl.innerHTML = field === "bid"
-        ? ("Wähle für jeden Spieler die <strong>Ansage</strong> (0–" + tricksN + "). Die Ansagen dürfen in Summe am Ende nicht genau " + tricksN + " ergeben.")
-        : ("Trage für jeden Spieler die tatsächlich gewonnenen <strong>Stiche</strong> (0–" + tricksN + ") ein.");
+      actionsEl.style.display = pregame ? "" : "none";
 
-      actionsEl.style.display = showManage ? "" : "none";
+      playersEl.innerHTML = "";
+      wrapEls = [];
+      totalDisplayEls = [];
 
-      var forbidden = field === "bid" ? computeBidForbidden() : {};
+      var wrap = document.createElement("div");
+      wrap.className = "player-wrap";
+      var card = document.createElement("div");
+      card.className = "player";
+
+      if (activeIdx !== -1) {
+        var p = state.players[activeIdx];
+        var isCorrection = bidEditingIdx !== null;
+
+        var nameEl = document.createElement("input");
+        nameEl.className = "wiz-turn-name";
+        nameEl.value = p.name;
+        nameEl.setAttribute("aria-label", "Spielername");
+        nameEl.addEventListener("change", function () {
+          state.players[activeIdx].name = nameEl.value || ("Spieler " + (activeIdx + 1));
+          save();
+        });
+        card.appendChild(nameEl);
+
+        var label = document.createElement("div");
+        label.className = "wiz-turn-label";
+        label.textContent = isCorrection ? "Ansage korrigieren" : "ist an der Reihe – Ansage wählen";
+        card.appendChild(label);
+
+        var forbiddenVal = activeIdx === state.players.length - 1 ? computeLastBidderForbidden() : null;
+        card.appendChild(buildPicker(activeIdx, "bid", tricksN, forbiddenVal, function () {
+          bidEditingIdx = null;
+        }));
+
+        card.appendChild(buildBidOverview(activeIdx, pregame));
+      } else {
+        var doneLabel = document.createElement("div");
+        doneLabel.className = "wiz-turn-label";
+        doneLabel.textContent = "Alle Ansagen abgegeben";
+        card.appendChild(doneLabel);
+        card.appendChild(buildBidOverview(-1, false));
+      }
+
+      wrap.appendChild(card);
+      playersEl.appendChild(wrap);
+      wrapEls.push(wrap);
+
+      primaryRowEl.style.display = "";
+      primaryBtn.disabled = !allSet;
+      primaryBtn.textContent = "Weiter zu Stiche →";
+
+      layout();
+    }
+
+    // Tricks phase: unlike bidding, tricks aren't turn-based (they're
+    // counted after the hand is played), so every player's grid stays
+    // visible at once, same as before.
+    function renderTricks() {
+      var tricksN = state.round;
+
+      roundEl.textContent = "Runde " + state.round + " von " + maxRounds() + " · Stiche eintragen";
+      rulesEl.innerHTML = "Trage für jeden Spieler die tatsächlich gewonnenen <strong>Stiche</strong> (0–" + tricksN + ") ein.";
+
+      actionsEl.style.display = "none";
 
       playersEl.innerHTML = "";
       wrapEls = [];
@@ -876,32 +1089,29 @@
 
         var card = document.createElement("div");
         card.className = "player";
-        card.appendChild(buildNameHead(idx, p, showManage));
+        card.appendChild(buildNameHead(idx, p, false));
 
-        if (field === "tricks") {
-          var recap = document.createElement("div");
-          recap.className = "wiz-recap";
-          recap.textContent = "Ansage: " + p.bid;
-          card.appendChild(recap);
-        }
+        var recap = document.createElement("div");
+        recap.className = "wiz-recap";
+        recap.textContent = "Ansage: " + p.bid;
+        card.appendChild(recap);
 
         var label = document.createElement("div");
         label.className = "wiz-picker-label";
-        label.textContent = field === "bid" ? "Ansage" : "Stiche";
+        label.textContent = "Stiche";
         card.appendChild(label);
 
-        var forbiddenVal = forbidden[idx] !== undefined ? forbidden[idx] : null;
-        card.appendChild(buildPicker(idx, field, tricksN, forbiddenVal));
+        card.appendChild(buildPicker(idx, "tricks", tricksN, null));
 
         wrap.appendChild(card);
         playersEl.appendChild(wrap);
         wrapEls.push(wrap);
       });
 
-      var allSet = state.players.every(function (p) { return p[field] !== null; });
+      var allSet = state.players.every(function (p) { return p.tricks !== null; });
       primaryRowEl.style.display = "";
       primaryBtn.disabled = !allSet;
-      primaryBtn.textContent = field === "bid" ? "Weiter zu Stiche →" : "Ergebnis berechnen →";
+      primaryBtn.textContent = "Ergebnis berechnen →";
 
       layout();
     }
@@ -973,7 +1183,8 @@
 
     function render() {
       if (state.phase === "result") renderResult();
-      else renderInput();
+      else if (state.phase === "tricks") renderTricks();
+      else renderBid();
     }
 
     // Single-column stacked cards for the bid/tricks number grids
@@ -1045,6 +1256,7 @@
         return;
       }
       state.players.push({ name: "Spieler " + (state.players.length + 1), total: 0, bid: null, tricks: null });
+      bidEditingIdx = null;
       save();
       render();
     });
@@ -1054,6 +1266,7 @@
         var names = state.players.map(function (p) { return p.name; });
         state = defaultState();
         state.players = names.map(function (n) { return { name: n, total: 0, bid: null, tricks: null }; });
+        bidEditingIdx = null;
         save();
         render();
       }
@@ -1081,6 +1294,7 @@
         });
         state.phase = "bid";
       }
+      bidEditingIdx = null;
       save();
       render();
     });
