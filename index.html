@@ -187,6 +187,15 @@
     color: #fff;
   }
 
+  button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  button:disabled:active {
+    background: #fff;
+    color: #000;
+  }
+
   .stepper {
     display: block;
     width: 100%;
@@ -288,58 +297,38 @@
     font-weight: 700;
     text-align: center;
     font-family: Verdana, Geneva, sans-serif;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
   }
 
-  .wiz-counters {
-    margin-top: 4px;
-  }
-
-  .wiz-counter {
-    float: left;
-    width: 48%;
-  }
-
-  .wiz-counter.last {
-    float: right;
-  }
-
-  .wiz-counter-label {
+  .wiz-picker-label {
     font-family: Verdana, sans-serif;
     font-size: 12px;
     letter-spacing: 1px;
     text-transform: uppercase;
-    text-align: center;
-    margin-bottom: 3px;
+    margin-bottom: 6px;
   }
 
-  .wiz-counter-value {
-    font-family: Verdana, Geneva, sans-serif;
-    font-weight: 700;
-    font-size: 26px;
-    text-align: center;
-    border: 3px solid #000;
-    padding: 4px 0;
-    margin-bottom: 5px;
-  }
-
-  .wiz-counter-btns button {
-    float: left;
-    width: 48%;
-    height: 40px;
-    font-size: 18px;
-  }
-
-  .wiz-counter-btns button.last {
-    float: right;
-  }
-
-  .wiz-round-score {
-    clear: both;
+  .wiz-recap {
     font-family: Verdana, sans-serif;
     font-size: 13px;
-    text-align: center;
-    padding-top: 10px;
+    color: #333;
+    margin-bottom: 8px;
+  }
+
+  .wiz-picker {
+    margin-bottom: 2px;
+  }
+
+  .wiz-pick {
+    float: left;
+    height: 44px;
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+
+  .wiz-pick.selected {
+    background: #000;
+    color: #fff;
   }
 
   .wiz-gameover {
@@ -348,14 +337,14 @@
     font-size: 15px;
     font-weight: bold;
     text-align: center;
-    padding-top: 16px;
+    padding-top: 6px;
   }
 
-  .wiz-finish-row {
+  .wiz-primary-row {
     margin-top: 16px;
   }
 
-  .wiz-finish-row button {
+  .wiz-primary-row button {
     display: block;
     width: 100%;
     height: 58px;
@@ -404,18 +393,15 @@
     <h1>Wizard<span class="sub">Punktetafel</span></h1>
     <div id="wizRound"></div>
     <button id="wizardBackBtn" class="back-link" type="button">&#8249; Spiele wechseln</button>
+    <button id="wizNewGameLinkBtn" class="back-link" type="button">Neues Spiel</button>
   </header>
 
-  <div class="rules-note">
-    Sage vor jeder Runde deine <strong>Anzahl Stiche</strong> an. Trage nach der Runde die tatsächlich
-    gewonnenen <strong>Stiche</strong> ein und tippe <strong>Runde abschließen</strong>. Bei richtiger
-    Ansage gibt es 20 + 10 Punkte pro Stich, sonst 10 Minuspunkte pro Differenz.
-  </div>
+  <div id="wizRules" class="rules-note"></div>
 
   <div id="wizPlayers" class="clearfix"></div>
 
-  <div class="wiz-finish-row">
-    <button id="wizFinishRoundBtn" type="button">Runde abschließen</button>
+  <div class="wiz-primary-row">
+    <button id="wizPrimaryBtn" type="button"></button>
   </div>
 
   <div class="actions clearfix">
@@ -683,6 +669,13 @@
 
   /* ---------------------------------------------------------------
      Wizard module
+
+     Each round runs through three separate phases, so the UI only
+     ever shows what that phase needs:
+       "bid"    - every player picks a bid from a number grid
+       "tricks" - every player picks the tricks they actually won
+       "result" - round score + new total, shown large; next round
+                  (or, on the last round, the winner) follows
   --------------------------------------------------------------- */
   var Wizard = (function () {
     var STORAGE_KEY = "wizard-scoreboard-v1";
@@ -693,22 +686,23 @@
     var screenEl = document.getElementById("wizardScreen");
     var playersEl = document.getElementById("wizPlayers");
     var roundEl = document.getElementById("wizRound");
+    var rulesEl = document.getElementById("wizRules");
     var actionsEl = screenEl.querySelector(".actions");
     var footerEl = screenEl.querySelector("footer");
-    var finishRowEl = screenEl.querySelector(".wiz-finish-row");
-    var finishBtn = document.getElementById("wizFinishRoundBtn");
+    var primaryRowEl = screenEl.querySelector(".wiz-primary-row");
+    var primaryBtn = document.getElementById("wizPrimaryBtn");
 
     var wrapEls = [];
     var totalDisplayEls = [];
-    var roundScoreEls = [];
 
     function defaultState() {
       return {
+        phase: "bid",
         round: 1,
         players: [
-          { name: "Spieler 1", total: 0, bid: 0, tricks: 0 },
-          { name: "Spieler 2", total: 0, bid: 0, tricks: 0 },
-          { name: "Spieler 3", total: 0, bid: 0, tricks: 0 }
+          { name: "Spieler 1", total: 0, bid: null, tricks: null },
+          { name: "Spieler 2", total: 0, bid: null, tricks: null },
+          { name: "Spieler 3", total: 0, bid: null, tricks: null }
         ]
       };
     }
@@ -720,6 +714,12 @@
         var parsed = JSON.parse(raw);
         if (!parsed.players || parsed.players.length < MIN_PLAYERS) return defaultState();
         if (typeof parsed.round !== "number" || parsed.round < 1) parsed.round = 1;
+        if (parsed.phase !== "bid" && parsed.phase !== "tricks" && parsed.phase !== "result") parsed.phase = "bid";
+        parsed.players.forEach(function (p) {
+          if (typeof p.total !== "number") p.total = 0;
+          if (typeof p.bid !== "number") p.bid = null;
+          if (typeof p.tricks !== "number") p.tricks = null;
+        });
         return parsed;
       } catch (e) {
         return defaultState();
@@ -734,11 +734,6 @@
 
     var state = load();
 
-    function columnsFor(n) {
-      if (n <= 2) return 1;
-      return 2;
-    }
-
     function roundScore(bid, tricks) {
       if (bid === tricks) return 20 + 10 * tricks;
       return -10 * Math.abs(bid - tricks);
@@ -752,73 +747,175 @@
       return Math.max(1, Math.floor(DECK_SIZE / state.players.length));
     }
 
-    function updateRoundScore(idx) {
-      var el = roundScoreEls[idx];
-      if (!el) return;
-      var p = state.players[idx];
-      el.textContent = "Rundenergebnis: " + formatScore(roundScore(p.bid, p.tricks));
+    // Setup is only offered before the very first bid of the game,
+    // so player management never gets in the way once a round is
+    // under way.
+    function isPreGame() {
+      return state.round === 1 && state.phase === "bid" && state.players.every(function (p) {
+        return p.bid === null;
+      });
     }
 
-    function buildCounter(label, idx, field, isLast) {
+    // The classic Wizard "hook" rule: whoever bids last may not name
+    // the number that would make every bid add up exactly to the
+    // tricks available this round. We don't track table turn order,
+    // so this applies dynamically to whichever player happens to be
+    // the sole remaining bidder once everyone else has bid.
+    function computeBidForbidden() {
+      var tricksN = state.round;
+      var unsetIdx = -1;
+      var unsetCount = 0;
+      var sumSet = 0;
+      state.players.forEach(function (p, i) {
+        if (p.bid === null) {
+          unsetCount++;
+          unsetIdx = i;
+        } else {
+          sumSet += p.bid;
+        }
+      });
+      var forbidden = {};
+      if (unsetCount === 1) {
+        var val = tricksN - sumSet;
+        if (val >= 0 && val <= tricksN) forbidden[unsetIdx] = val;
+      }
+      return forbidden;
+    }
+
+    // Grid of number buttons 0..maxVal, exactly one selectable/selected.
+    function buildPicker(idx, field, maxVal, forbiddenVal) {
       var wrap = document.createElement("div");
-      wrap.className = isLast ? "wiz-counter last" : "wiz-counter";
+      wrap.className = "wiz-picker clearfix";
 
-      var lab = document.createElement("div");
-      lab.className = "wiz-counter-label";
-      lab.textContent = label;
-      wrap.appendChild(lab);
+      var count = maxVal + 1;
+      var perRow = Math.min(count, 6);
+      var gap = 2;
+      var btnPct = (100 - gap * (perRow - 1)) / perRow;
+      var current = state.players[idx][field];
 
-      var val = document.createElement("div");
-      val.className = "wiz-counter-value";
-      val.textContent = state.players[idx][field];
-      wrap.appendChild(val);
-
-      var btns = document.createElement("div");
-      btns.className = "wiz-counter-btns clearfix";
-
-      var minus = document.createElement("button");
-      minus.type = "button";
-      minus.textContent = "-";
-      minus.addEventListener("click", function () {
-        var p = state.players[idx];
-        p[field] = Math.max(0, p[field] - 1);
-        val.textContent = p[field];
-        save();
-        updateRoundScore(idx);
-      });
-
-      var plus = document.createElement("button");
-      plus.type = "button";
-      plus.className = "last";
-      plus.textContent = "+";
-      plus.addEventListener("click", function () {
-        var p = state.players[idx];
-        if (p[field] < state.round) p[field] += 1;
-        val.textContent = p[field];
-        save();
-        updateRoundScore(idx);
-      });
-
-      btns.appendChild(minus);
-      btns.appendChild(plus);
-      wrap.appendChild(btns);
+      var v;
+      for (v = 0; v <= maxVal; v++) {
+        (function (v) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "wiz-pick" + (current === v ? " selected" : "");
+          btn.textContent = String(v);
+          btn.style.width = btnPct + "%";
+          btn.style.marginRight = ((v + 1) % perRow === 0) ? "0" : gap + "%";
+          if (forbiddenVal !== null && v === forbiddenVal) {
+            btn.disabled = true;
+          }
+          btn.addEventListener("click", function () {
+            state.players[idx][field] = v;
+            save();
+            render();
+          });
+          wrap.appendChild(btn);
+        })(v);
+      }
 
       return wrap;
     }
 
-    function render() {
-      var rounds = maxRounds();
-      var gameOver = state.round > rounds;
+    function buildNameHead(idx, p, showManage) {
+      var head = document.createElement("div");
+      head.className = "player-head clearfix";
 
-      roundEl.textContent = gameOver ? "Spiel beendet" : ("Runde " + state.round + " von " + rounds);
+      var nameInput = document.createElement("input");
+      nameInput.className = "player-name";
+      nameInput.value = p.name;
+      nameInput.setAttribute("aria-label", "Spielername");
+      nameInput.addEventListener("change", function () {
+        state.players[idx].name = nameInput.value || ("Spieler " + (idx + 1));
+        save();
+      });
+      head.appendChild(nameInput);
+
+      if (showManage && state.players.length > MIN_PLAYERS) {
+        var rm = document.createElement("button");
+        rm.className = "remove-player";
+        rm.textContent = "Entfernen";
+        rm.addEventListener("click", function () {
+          if (confirm((state.players[idx].name || "Diesen Spieler") + " entfernen?")) {
+            state.players.splice(idx, 1);
+            save();
+            render();
+          }
+        });
+        head.appendChild(rm);
+      }
+
+      return head;
+    }
+
+    // Phases "bid" and "tricks" share the same card shape: name,
+    // (a bid recap during "tricks") and a single number grid.
+    function renderInput() {
+      var field = state.phase;
+      var tricksN = state.round;
+      var showManage = isPreGame();
+
+      roundEl.textContent = "Runde " + state.round + " von " + maxRounds() + " · " +
+        (field === "bid" ? "Tipp abgeben" : "Stiche eintragen");
+
+      rulesEl.innerHTML = field === "bid"
+        ? ("Wähle für jeden Spieler die <strong>Ansage</strong> (0–" + tricksN + "). Die Ansagen dürfen in Summe am Ende nicht genau " + tricksN + " ergeben.")
+        : ("Trage für jeden Spieler die tatsächlich gewonnenen <strong>Stiche</strong> (0–" + tricksN + ") ein.");
+
+      actionsEl.style.display = showManage ? "" : "none";
+
+      var forbidden = field === "bid" ? computeBidForbidden() : {};
 
       playersEl.innerHTML = "";
       wrapEls = [];
       totalDisplayEls = [];
-      roundScoreEls = [];
+
+      state.players.forEach(function (p, idx) {
+        var wrap = document.createElement("div");
+        wrap.className = "player-wrap";
+
+        var card = document.createElement("div");
+        card.className = "player";
+        card.appendChild(buildNameHead(idx, p, showManage));
+
+        if (field === "tricks") {
+          var recap = document.createElement("div");
+          recap.className = "wiz-recap";
+          recap.textContent = "Ansage: " + p.bid;
+          card.appendChild(recap);
+        }
+
+        var label = document.createElement("div");
+        label.className = "wiz-picker-label";
+        label.textContent = field === "bid" ? "Ansage" : "Stiche";
+        card.appendChild(label);
+
+        var forbiddenVal = forbidden[idx] !== undefined ? forbidden[idx] : null;
+        card.appendChild(buildPicker(idx, field, tricksN, forbiddenVal));
+
+        wrap.appendChild(card);
+        playersEl.appendChild(wrap);
+        wrapEls.push(wrap);
+      });
+
+      var allSet = state.players.every(function (p) { return p[field] !== null; });
+      primaryRowEl.style.display = "";
+      primaryBtn.disabled = !allSet;
+      primaryBtn.textContent = field === "bid" ? "Weiter zu Stiche →" : "Ergebnis berechnen →";
+
+      layout();
+    }
+
+    function renderResult() {
+      var rounds = maxRounds();
+      var isFinal = state.round >= rounds;
+
+      roundEl.textContent = isFinal ? "Spiel beendet" : ("Runde " + state.round + " von " + rounds + " · Ergebnis");
+      rulesEl.innerHTML = "Rundenergebnis: 20 + 10 Punkte pro Stich bei richtiger Ansage, sonst 10 Minuspunkte pro Differenz.";
+      actionsEl.style.display = "";
 
       var winnerIdx = -1;
-      if (gameOver) {
+      if (isFinal) {
         var best = -Infinity;
         state.players.forEach(function (p, i) {
           if (p.total > best) {
@@ -828,65 +925,34 @@
         });
       }
 
+      playersEl.innerHTML = "";
+      wrapEls = [];
+      totalDisplayEls = [];
+
       state.players.forEach(function (p, idx) {
         var wrap = document.createElement("div");
         wrap.className = "player-wrap";
 
         var card = document.createElement("div");
         card.className = "player";
+        card.appendChild(buildNameHead(idx, p, true));
 
-        var head = document.createElement("div");
-        head.className = "player-head clearfix";
-
-        var nameInput = document.createElement("input");
-        nameInput.className = "player-name";
-        nameInput.value = p.name;
-        nameInput.setAttribute("aria-label", "Spielername");
-        nameInput.addEventListener("change", function () {
-          state.players[idx].name = nameInput.value || ("Spieler " + (idx + 1));
-          save();
-        });
-        head.appendChild(nameInput);
-
-        if (state.players.length > MIN_PLAYERS) {
-          var rm = document.createElement("button");
-          rm.className = "remove-player";
-          rm.textContent = "Entfernen";
-          rm.addEventListener("click", function () {
-            if (confirm((state.players[idx].name || "Diesen Spieler") + " entfernen?")) {
-              state.players.splice(idx, 1);
-              save();
-              render();
-            }
-          });
-          head.appendChild(rm);
-        }
-
-        card.appendChild(head);
+        var recap = document.createElement("div");
+        recap.className = "wiz-recap";
+        recap.textContent = "Ansage " + p.bid + " · Stiche " + p.tricks + " → " + formatScore(roundScore(p.bid, p.tricks));
+        card.appendChild(recap);
 
         var total = document.createElement("div");
         total.className = "wiz-total";
-        total.textContent = gameOver && idx === winnerIdx ? p.total + " ★" : String(p.total);
+        total.textContent = isFinal && idx === winnerIdx ? p.total + " ★" : String(p.total);
         card.appendChild(total);
         totalDisplayEls.push(total);
 
-        if (!gameOver) {
-          var counters = document.createElement("div");
-          counters.className = "wiz-counters clearfix";
-          counters.appendChild(buildCounter("Ansage", idx, "bid", false));
-          counters.appendChild(buildCounter("Stiche", idx, "tricks", true));
-          card.appendChild(counters);
-
-          var preview = document.createElement("div");
-          preview.className = "wiz-round-score";
-          preview.textContent = "Rundenergebnis: " + formatScore(roundScore(p.bid, p.tricks));
-          card.appendChild(preview);
-          roundScoreEls[idx] = preview;
-        } else {
-          var overMsg = document.createElement("div");
-          overMsg.className = "wiz-gameover";
-          overMsg.textContent = idx === winnerIdx ? "Gewinner!" : "";
-          card.appendChild(overMsg);
+        if (isFinal && idx === winnerIdx) {
+          var win = document.createElement("div");
+          win.className = "wiz-gameover";
+          win.textContent = "Gewinner!";
+          card.appendChild(win);
         }
 
         wrap.appendChild(card);
@@ -894,15 +960,29 @@
         wrapEls.push(wrap);
       });
 
-      finishRowEl.style.display = gameOver ? "none" : "";
-      finishBtn.textContent = "Runde " + state.round + " abschließen";
+      if (isFinal) {
+        primaryRowEl.style.display = "none";
+      } else {
+        primaryRowEl.style.display = "";
+        primaryBtn.disabled = false;
+        primaryBtn.textContent = "Nächste Runde →";
+      }
 
       layout();
     }
 
+    function render() {
+      if (state.phase === "result") renderResult();
+      else renderInput();
+    }
+
+    // Single-column stacked cards for the bid/tricks number grids
+    // (full width keeps buttons touch-friendly); the result phase
+    // can go back to a denser multi-column overview.
     function layout() {
       var n = state.players.length;
-      var cols = columnsFor(n);
+      var isInput = state.phase === "bid" || state.phase === "tricks";
+      var cols = isInput ? 1 : (n <= 2 ? 1 : 2);
       var rows = Math.ceil(n / cols);
 
       var colWidth = Math.floor(100 / cols);
@@ -915,35 +995,37 @@
 
       var vh = window.innerHeight || document.documentElement.clientHeight || 600;
       var playersTop = playersEl.offsetTop;
-      var actionsHeight = actionsEl ? actionsEl.offsetHeight : 50;
-      var finishHeight = finishRowEl ? finishRowEl.offsetHeight : 0;
+      var actionsHeight = actionsEl && actionsEl.style.display !== "none" ? actionsEl.offsetHeight : 0;
+      var primaryHeight = primaryRowEl ? primaryRowEl.offsetHeight : 0;
       var footerHeight = footerEl ? footerEl.offsetHeight : 30;
       var bottomPadding = 40;
 
-      var available = vh - playersTop - actionsHeight - finishHeight - footerHeight - bottomPadding;
-      if (available < 260) available = 260;
+      var available = vh - playersTop - actionsHeight - primaryHeight - footerHeight - bottomPadding;
+      if (available < 200) available = 200;
 
       var estRowHeight = Math.floor(available / rows) - 12;
-      if (estRowHeight < 230) estRowHeight = 230;
+      if (estRowHeight < 160) estRowHeight = 160;
 
-      var totalHeight = Math.floor(estRowHeight * 0.28);
-      if (totalHeight < 46) totalHeight = 46;
-      if (totalHeight > 90) totalHeight = 90;
+      if (!isInput) {
+        var totalHeight = Math.floor(estRowHeight * 0.28);
+        if (totalHeight < 46) totalHeight = 46;
+        if (totalHeight > 90) totalHeight = 90;
 
-      var fontSize = Math.floor(totalHeight * 0.62);
-      if (fontSize > 52) fontSize = 52;
-      if (fontSize < 22) fontSize = 22;
+        var fontSize = Math.floor(totalHeight * 0.62);
+        if (fontSize > 52) fontSize = 52;
+        if (fontSize < 22) fontSize = 22;
 
-      for (i = 0; i < totalDisplayEls.length; i++) {
-        totalDisplayEls[i].style.height = totalHeight + "px";
-        totalDisplayEls[i].style.lineHeight = totalHeight + "px";
-        totalDisplayEls[i].style.fontSize = fontSize + "px";
+        for (i = 0; i < totalDisplayEls.length; i++) {
+          totalDisplayEls[i].style.height = totalHeight + "px";
+          totalDisplayEls[i].style.lineHeight = totalHeight + "px";
+          totalDisplayEls[i].style.fontSize = fontSize + "px";
+        }
       }
 
       // Cards can need more room than the viewport-based estimate
-      // (long names, narrow columns). Measure the natural content
-      // height and grow every row to fit the tallest card, so cards
-      // never overlap the row below them.
+      // (long names, narrow columns, many picker rows). Measure the
+      // natural content height and grow every row to fit the
+      // tallest card, so cards never overlap the row below them.
       var neededHeight = 0;
       for (i = 0; i < wrapEls.length; i++) {
         if (wrapEls[i].offsetHeight > neededHeight) neededHeight = wrapEls[i].offsetHeight;
@@ -962,29 +1044,43 @@
         alert("Maximal " + MAX_PLAYERS + " Spieler.");
         return;
       }
-      state.players.push({ name: "Spieler " + (state.players.length + 1), total: 0, bid: 0, tricks: 0 });
+      state.players.push({ name: "Spieler " + (state.players.length + 1), total: 0, bid: null, tricks: null });
       save();
       render();
     });
 
-    document.getElementById("wizNewGameBtn").addEventListener("click", function () {
+    function newGame() {
       if (confirm("Neues Spiel starten? Alle Punktestände werden zurückgesetzt.")) {
         var names = state.players.map(function (p) { return p.name; });
         state = defaultState();
-        state.players = names.map(function (n) { return { name: n, total: 0, bid: 0, tricks: 0 }; });
-        state.round = 1;
+        state.players = names.map(function (n) { return { name: n, total: 0, bid: null, tricks: null }; });
         save();
         render();
       }
-    });
+    }
 
-    finishBtn.addEventListener("click", function () {
-      state.players.forEach(function (p) {
-        p.total += roundScore(p.bid, p.tricks);
-        p.bid = 0;
-        p.tricks = 0;
-      });
-      state.round += 1;
+    document.getElementById("wizNewGameBtn").addEventListener("click", newGame);
+    document.getElementById("wizNewGameLinkBtn").addEventListener("click", newGame);
+
+    primaryBtn.addEventListener("click", function () {
+      if (state.phase === "bid") {
+        if (!state.players.every(function (p) { return p.bid !== null; })) return;
+        state.phase = "tricks";
+      } else if (state.phase === "tricks") {
+        if (!state.players.every(function (p) { return p.tricks !== null; })) return;
+        state.players.forEach(function (p) {
+          p.total += roundScore(p.bid, p.tricks);
+        });
+        state.phase = "result";
+      } else if (state.phase === "result") {
+        if (state.round >= maxRounds()) return;
+        state.round += 1;
+        state.players.forEach(function (p) {
+          p.bid = null;
+          p.tricks = null;
+        });
+        state.phase = "bid";
+      }
       save();
       render();
     });
