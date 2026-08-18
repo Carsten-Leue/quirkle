@@ -476,6 +476,14 @@
     margin-bottom: 6px;
   }
 
+  /* Bigger tap targets for the bid phase's single active-player
+     picker, which has the whole card width to itself. */
+  .wiz-pick.wiz-pick-lg {
+    height: 66px;
+    font-size: 26px;
+    margin-bottom: 8px;
+  }
+
   .wiz-pick.selected {
     background: #000;
     color: #fff;
@@ -953,7 +961,7 @@
     // Grid of number buttons 0..maxVal, exactly one selectable/selected.
     // afterSelect (optional) runs right after the value is set, before
     // save/render - used to clear turn-correction state.
-    function buildPicker(idx, field, maxVal, forbiddenVal, afterSelect) {
+    function buildPicker(idx, field, maxVal, forbiddenVal, afterSelect, large) {
       var wrap = document.createElement("div");
       wrap.className = "wiz-picker clearfix";
 
@@ -968,7 +976,7 @@
         (function (v) {
           var btn = document.createElement("button");
           btn.type = "button";
-          btn.className = "wiz-pick" + (current === v ? " selected" : "");
+          btn.className = "wiz-pick" + (large ? " wiz-pick-lg" : "") + (current === v ? " selected" : "");
           btn.textContent = String(v);
           btn.style.width = btnPct + "%";
           btn.style.marginRight = ((v + 1) % perRow === 0) ? "0" : gap + "%";
@@ -1146,7 +1154,7 @@
         var forbiddenVal = activeIdx === state.players.length - 1 ? computeLastBidderForbidden() : null;
         card.appendChild(buildPicker(activeIdx, "bid", tricksN, forbiddenVal, function () {
           bidEditingIdx = null;
-        }));
+        }, true));
 
         card.appendChild(buildBidOverview(activeIdx, pregame));
       } else {
